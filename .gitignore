@@ -50,6 +50,8 @@ Starship.log
 *.sav
 *.lib
 *.pdb
+*.obj
+*.exe
 dumps/
 _packages/*
 *.DS_Store

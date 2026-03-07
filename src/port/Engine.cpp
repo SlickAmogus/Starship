@@ -2,7 +2,9 @@
 #include "ui/ImguiUI.h"
 #include "StringHelper.h"
 
+#ifndef NXDK
 #include "extractor/GameExtractor.h"
+#endif
 #include "libultraship/src/Context.h"
 #include "libultraship/src/controller/controldevice/controller/mapping/ControllerDefaultMappings.h"
 #include "resource/type/ResourceType.h"
@@ -75,7 +77,7 @@ GameEngine::GameEngine() {
     const std::string main_path = Ship::Context::GetPathRelativeToAppDirectory("sf64.o2r");
     const std::string assets_path = Ship::Context::LocateFileAcrossAppDirs("starship.o2r");
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(NXDK)
     AllocConsole();
 #endif
 
@@ -170,7 +172,7 @@ GameEngine::GameEngine() {
     auto audioChannelsSetting = Ship::Context::GetInstance()->GetConfig()->GetCurrentAudioChannelsSetting();
     this->context->Init(archiveFiles, {}, 3, { 32000, 1024, 1680, audioChannelsSetting }, window, controlDeck);
 
-#ifndef __SWITCH__
+#if !defined(__SWITCH__) && !defined(NXDK)
     Ship::Context::GetInstance()->GetLogger()->set_level(
         (spdlog::level::level_enum) CVarGetInteger("gDeveloperTools.LogLevel", 1));
     Ship::Context::GetInstance()->GetLogger()->set_pattern("[%H:%M:%S.%e] [%s:%#] [%l] %v");
@@ -266,6 +268,10 @@ GameEngine::GameEngine() {
 }
 
 bool GameEngine::GenAssetFile(bool exitOnFail) {
+#ifdef NXDK
+    // Asset extraction not supported on Xbox - assets must be pre-extracted
+    return false;
+#else
     auto extractor = new GameExtractor();
 
     if (!extractor->SelectGameFromUI()) {
@@ -290,13 +296,16 @@ bool GameEngine::GenAssetFile(bool exitOnFail) {
     ShowMessage(("Starship - Extraction - Found " + game.value()).c_str(), "The extraction process will now begin.\n\nThis may take a few minutes.", SDL_MESSAGEBOX_INFORMATION);
 
     return extractor->GenerateOTR();
+#endif
 }
 
 void GameEngine::Create() {
     const auto instance = Instance = new GameEngine();
     instance->AudioInit();
     DisplayListPatch::Run();
+#ifndef NXDK
     GameUI::SetupGuiElements();
+#endif
 #if defined(__SWITCH__) || defined(__WIIU__)
     CVarRegisterInteger("gControlNav", 1); // always enable controller nav on switch/wii u
     osSetTime(0);
@@ -566,7 +575,7 @@ void GameEngine::ShowMessage(const char* title, const char* message, SDL_Message
 
 int GameEngine::ShowYesNoBox(const char* title, const char* box) {
     int ret;
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(NXDK)
     ret = MessageBoxA(nullptr, box, title, MB_YESNO | MB_ICONQUESTION);
 #elif defined(__SWITCH__)
     SPDLOG_ERROR(box);

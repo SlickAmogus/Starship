@@ -2,6 +2,7 @@
 #define _XSTDIO_H
 #include <libultraship.h>
 #include <stdio.h>
+#include <stdarg.h>
 
 #define FLAGS_SPACE 1
 #define FLAGS_PLUS 2
