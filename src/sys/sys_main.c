@@ -3,6 +3,10 @@
 
 #include <functions.h>
 
+#ifdef NXDK
+#include "xbox_debug.h"
+#endif
+
 s32 sGammaMode = 1;
 
 SPTask* gCurrentTask;
@@ -109,8 +113,18 @@ void Main_Initialize(void) {
 void Audio_ThreadEntry(void* arg0) {
     SPTask* task;
 
+#ifdef NXDK
+    xbox_log("  AudioLoad_Init...\n");
+#endif
     AudioLoad_Init();
+#ifdef NXDK
+    xbox_log("  AudioLoad_Init done\n");
+    xbox_log("  Audio_InitSounds...\n");
+#endif
     Audio_InitSounds();
+#ifdef NXDK
+    xbox_log("  Audio_InitSounds done\n");
+#endif
 }
 
 void Graphics_SetTask(void) {
@@ -361,10 +375,21 @@ void Main_ThreadEntry(void* arg0) {
     OSMesg ogMsg;
     u32 mesg;
 
+#ifdef NXDK
+    xbox_log("Main_ThreadEntry: Audio_ThreadEntry...\n");
+#endif
     Audio_ThreadEntry(NULL);
+#ifdef NXDK
+    xbox_log("Main_ThreadEntry: Graphics_ThreadEntry...\n");
+#endif
     Graphics_ThreadEntry(NULL);
+#ifdef NXDK
+    xbox_log("Main_ThreadEntry: Controller_Init...\n");
+#endif
     Controller_Init();
-
+#ifdef NXDK
+    xbox_log("Main_ThreadEntry: Main_InitMesgQueues...\n");
+#endif
     Main_InitMesgQueues();
 
     // LTODO: Implement timers

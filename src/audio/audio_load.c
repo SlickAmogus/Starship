@@ -3,6 +3,11 @@
 #include "sf64dma.h"
 #include "sf64audio_provisional.h"
 #include "assets/ast_audio.h"
+#ifdef NXDK
+#include "xbox_debug.h"
+extern void* ResourceGetDataByName(const char* name);
+extern uint8_t GameEngine_OTRSigCheck(const char* data);
+#endif
 #include "port/Engine.h"
 #include "endianness.h"
 #include "port/resource/loaders/AudioLoader.h"
@@ -855,6 +860,9 @@ void AudioLoad_Init(void) {
     gSampleDmaCount = 0;
 
     AudioHeap_InitMainPools(gInitPoolSize);
+#ifdef NXDK
+    xbox_log("    AudioHeap_InitMainPools done\n");
+#endif
 
     for (i = 0; i < 3; i++) {
         gAiBuffers[i] = AudioHeap_Alloc(&gInitPool, AIBUF_SIZE);
@@ -865,14 +873,48 @@ void AudioLoad_Init(void) {
 
     gAudioSpecId = AUDIOSPEC_CO;
     gAudioResetStep = 1;
+#ifdef NXDK
+    xbox_log("    AudioHeap_ResetStep...\n");
+#endif
     AudioHeap_ResetStep();
+#ifdef NXDK
+    xbox_log("    AudioHeap_ResetStep done\n");
+    xbox_log("    SEGMENTED_TO_VIRTUAL calls...\n");
+#endif
 
+#ifdef NXDK
+    xbox_log("    gSeqTableInit str='%s' ptr=%p\n", (const char*)gSeqTableInit, (void*)gSeqTableInit);
+    xbox_log("    OTRSigCheck=%d\n", GameEngine_OTRSigCheck((const char*)gSeqTableInit));
+    {
+        void* test = ResourceGetDataByName((const char*)gSeqTableInit);
+        xbox_log("    ResourceGetDataByName=%p\n", test);
+    }
+#endif
     gSequenceTable = SEGMENTED_TO_VIRTUAL(gSeqTableInit);
+#ifdef NXDK
+    xbox_log("    gSequenceTable=%p (from %p)\n", (void*)gSequenceTable, (void*)gSeqTableInit);
+#endif
     gSoundFontTable = SEGMENTED_TO_VIRTUAL(gSoundFontTableInit);
+#ifdef NXDK
+    xbox_log("    gSoundFontTable=%p\n", (void*)gSoundFontTable);
+#endif
     gSampleBankTable = SEGMENTED_TO_VIRTUAL(gSampleBankTableInit);
     gSeqFontTable = SEGMENTED_TO_VIRTUAL(gSeqFontTableInit);
+#ifdef NXDK
+    xbox_log("    SEGMENTED_TO_VIRTUAL done\n");
+    xbox_log("    gSequenceTable=%p gSoundFontTable=%p\n", (void*)gSequenceTable, (void*)gSoundFontTable);
+#endif
+    if (gSequenceTable == NULL || gSoundFontTable == NULL) {
+#ifdef NXDK
+        xbox_log("    ERROR: audio tables are NULL!\n");
+#endif
+        return;
+    }
     gNumSequences = gSequenceTable->base.numEntries;
     numFonts = gSoundFontTable->base.numEntries;
+#ifdef NXDK
+    xbox_log("    numSequences=%d numFonts=%d\n", gNumSequences, numFonts);
+#endif
 
     gSoundFontList = AudioHeap_Alloc(&gInitPool, numFonts * sizeof(SoundFont));
 
@@ -889,7 +931,13 @@ void AudioLoad_Init(void) {
     }
 
     AudioHeap_InitPool(&gPermanentPool.pool, ramAddr, gPermanentPoolSize);
+#ifdef NXDK
+    xbox_log("    AudioSeq_InitSequencePlayers...\n");
+#endif
     AudioSeq_InitSequencePlayers();
+#ifdef NXDK
+    xbox_log("    AudioLoad_Init complete\n");
+#endif
 }
 
 static const char devstr38[] = "Entry--- %d %d\n";

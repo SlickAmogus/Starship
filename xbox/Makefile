@@ -272,4 +272,7 @@ CXXFLAGS += -std=c++20
 CXXFLAGS += -fpermissive
 CXXFLAGS += -fexceptions
 
+# Default nxdk stack is 64KB - far too small for deep C++ call chains
+LDFLAGS += -stack:524288
+
 include $(NXDK_DIR)/Makefile

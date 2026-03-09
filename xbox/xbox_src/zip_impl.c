@@ -1,11 +1,15 @@
 // libzip-compatible implementation using miniz for Xbox/nxdk
 // Only read operations are functional. Write operations are stubs.
+// Uses one-shot extraction instead of streaming iterators for reliability.
 #ifdef NXDK
 
 #include "miniz.h"
 #include "zip.h"
 #include <stdlib.h>
 #include <string.h>
+#include "xbox_debug.h"
+
+static int s_zip_dbg = 0;
 
 // Internal zip archive structure
 struct zip {
@@ -18,8 +22,11 @@ struct zip {
 };
 
 // Internal zip file (entry being read) structure
+// Uses pre-extracted buffer instead of streaming iterator
 struct zip_file {
-    mz_zip_reader_extract_iter_state *iter;
+    void *data;        // extracted file data (malloc'd)
+    size_t size;       // total size of data
+    size_t read_pos;   // current read position
 };
 
 zip_t *zip_open(const char *path, int flags, int *errorp) {
@@ -101,8 +108,15 @@ zip_int64_t zip_name_locate(zip_t *archive, const char *fname, int flags) {
     (void)flags;
     if (!archive || !archive->is_open || !fname) return -1;
 
-    int idx = mz_zip_reader_locate_file(&archive->mz, fname, NULL, 0);
-    return (zip_int64_t)idx;
+    // Linear search through cached filenames (mz_zip_reader_locate_file is unreliable)
+    if (archive->filenames) {
+        for (mz_uint i = 0; i < archive->num_files; i++) {
+            if (archive->filenames[i] && strcmp(archive->filenames[i], fname) == 0) {
+                return (zip_int64_t)i;
+            }
+        }
+    }
+    return -1;
 }
 
 void zip_stat_init(zip_stat_t *sb) {
@@ -124,37 +138,64 @@ int zip_stat_index(zip_t *archive, zip_uint64_t index, int flags, zip_stat_t *sb
     sb->comp_size = mz_stat.m_comp_size;
     sb->name = archive->filenames ? archive->filenames[index] : NULL;
 
+    s_zip_dbg++;
+    if (s_zip_dbg <= 5) {
+        xbox_log("zip_stat[%d]: uncomp=%u sb->size=%u sizeof(zip_stat)=%u\n",
+                 (int)index, (unsigned)mz_stat.m_uncomp_size,
+                 (unsigned)sb->size, (unsigned)sizeof(zip_stat_t));
+    }
+
     return 0;
 }
 
+// Extract the entire file to memory in one shot (no streaming)
 zip_file_t *zip_fopen_index(zip_t *archive, zip_uint64_t index, int flags) {
     (void)flags;
     if (!archive || !archive->is_open) return NULL;
 
-    mz_zip_reader_extract_iter_state *iter =
-        mz_zip_reader_extract_iter_new(&archive->mz, (mz_uint)index, 0);
-    if (!iter) return NULL;
-
-    zip_file_t *f = (zip_file_t *)calloc(1, sizeof(zip_file_t));
-    if (!f) {
-        mz_zip_reader_extract_iter_free(iter);
+    size_t uncomp_size = 0;
+    void *data = mz_zip_reader_extract_to_heap(&archive->mz, (mz_uint)index, &uncomp_size, 0);
+    if (!data) {
+        if (s_zip_dbg <= 5) {
+            xbox_log("zip_fopen_index[%d]: extract_to_heap FAILED\n", (int)index);
+        }
         return NULL;
     }
 
-    f->iter = iter;
+    zip_file_t *f = (zip_file_t *)calloc(1, sizeof(zip_file_t));
+    if (!f) {
+        free(data);
+        return NULL;
+    }
+
+    f->data = data;
+    f->size = uncomp_size;
+    f->read_pos = 0;
+
+    if (s_zip_dbg <= 5) {
+        xbox_log("zip_fopen_index[%d]: extracted %u bytes OK\n", (int)index, (unsigned)uncomp_size);
+    }
+
     return f;
 }
 
 zip_int64_t zip_fread(zip_file_t *file, void *buf, zip_uint64_t nbytes) {
-    if (!file || !file->iter || !buf) return -1;
-    size_t read = mz_zip_reader_extract_iter_read(file->iter, buf, (size_t)nbytes);
-    return (zip_int64_t)read;
+    if (!file || !file->data || !buf) return -1;
+
+    size_t remaining = file->size - file->read_pos;
+    size_t to_read = (size_t)nbytes;
+    if (to_read > remaining) to_read = remaining;
+
+    memcpy(buf, (char *)file->data + file->read_pos, to_read);
+    file->read_pos += to_read;
+
+    return (zip_int64_t)to_read;
 }
 
 int zip_fclose(zip_file_t *file) {
     if (!file) return 0;
-    if (file->iter) {
-        mz_zip_reader_extract_iter_free(file->iter);
+    if (file->data) {
+        free(file->data);
     }
     free(file);
     return 0;

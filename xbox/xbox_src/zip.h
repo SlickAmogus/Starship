@@ -18,6 +18,9 @@ typedef struct zip zip_t;
 typedef struct zip_file zip_file_t;
 typedef struct zip_source zip_source_t;
 
+// Use pragma pack to ensure consistent struct layout between C and C++
+// on 32-bit platforms where pointer size differs from uint64_t
+#pragma pack(push, 1)
 typedef struct zip_stat {
     zip_uint64_t valid;
     const char *name;
@@ -25,6 +28,7 @@ typedef struct zip_stat {
     zip_uint64_t size;
     zip_uint64_t comp_size;
 } zip_stat_t;
+#pragma pack(pop)
 
 typedef struct zip_error {
     int zip_err;

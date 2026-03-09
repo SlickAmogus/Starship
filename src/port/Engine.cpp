@@ -5,6 +5,10 @@
 #ifndef NXDK
 #include "extractor/GameExtractor.h"
 #endif
+
+#ifdef NXDK
+#include "xbox_debug.h"
+#endif
 #include "libultraship/src/Context.h"
 #include "libultraship/src/controller/controldevice/controller/mapping/ControllerDefaultMappings.h"
 #include "resource/type/ResourceType.h"
@@ -65,8 +69,14 @@ std::vector<uint8_t*> MemoryPool;
 GameEngine* GameEngine::Instance;
 
 GameEngine::GameEngine() {
+#ifdef NXDK
+    xbox_log("GameEngine constructor start\n");
+#endif
     // Initialize context properties early to recognize paths properly for non-portable builds
     this->context = Ship::Context::CreateUninitializedInstance("Starship", "ship", "starship.cfg.json");
+#ifdef NXDK
+    xbox_log("Context created\n");
+#endif
 
 #ifdef __SWITCH__
     Ship::Switch::Init(Ship::PreInitPhase);
@@ -81,6 +91,39 @@ GameEngine::GameEngine() {
     AllocConsole();
 #endif
 
+#ifdef NXDK
+    xbox_log("Looking for archive: %s\n", main_path.c_str());
+    // On Xbox, try multiple paths - the XBE launch directory varies
+    {
+        const char* xbox_paths[] = {
+            "D:\\sf64.o2r",
+            "E:\\sf64.o2r",
+            "F:\\sf64.o2r",
+            "C:\\sf64.o2r",
+            "T:\\sf64.o2r",
+            ".\\sf64.o2r",
+            "sf64.o2r",
+            nullptr
+        };
+        bool found = false;
+        for (int i = 0; xbox_paths[i]; i++) {
+            xbox_log("Checking: %s\n", xbox_paths[i]);
+            FILE* test = fopen(xbox_paths[i], "rb");
+            if (test) {
+                fclose(test);
+                archiveFiles.push_back(xbox_paths[i]);
+                xbox_log("Found sf64.o2r at %s\n", xbox_paths[i]);
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            xbox_log("ERROR: sf64.o2r not found at any path!\n");
+            Sleep(10000);
+            exit(1);
+        }
+    }
+#else
     if (std::filesystem::exists(main_path)) {
         archiveFiles.push_back(main_path);
     } else {
@@ -101,7 +144,9 @@ GameEngine::GameEngine() {
             exit(1);
         }
     }
+#endif
 
+#ifndef NXDK
     if (std::filesystem::exists(assets_path)) {
         archiveFiles.push_back(assets_path);
     }
@@ -126,8 +171,15 @@ GameEngine::GameEngine() {
             }
         }
     }
+#endif
 
+#ifdef NXDK
+    xbox_log("InitConfiguration...\n");
+#endif
     this->context->InitConfiguration();    // without this line InitConsoleVariables fails at Config::Reload()
+#ifdef NXDK
+    xbox_log("InitConsoleVariables...\n");
+#endif
     this->context->InitConsoleVariables(); // without this line the controldeck constructor failes in
                                            // ShipDeviceIndexMappingManager::UpdateControllerNamesFromConfig()
 
@@ -164,13 +216,25 @@ GameEngine::GameEngine() {
     );
     auto controlDeck = std::make_shared<LUS::ControlDeck>(std::vector<CONTROLLERBUTTONS_T>(), defaultMappings);
 
+#ifdef NXDK
+    xbox_log("InitResourceManager...\n");
+#endif
     this->context->InitResourceManager(archiveFiles, {}, 3); // without this line InitWindow fails in Gui::Init()
+#ifdef NXDK
+    xbox_log("InitConsole...\n");
+#endif
     this->context->InitConsole(); // without this line the GuiWindow constructor fails in ConsoleWindow::InitElement()
 
     auto window = std::make_shared<Fast::Fast3dWindow>(std::vector<std::shared_ptr<Ship::GuiWindow>>({}));
 
     auto audioChannelsSetting = Ship::Context::GetInstance()->GetConfig()->GetCurrentAudioChannelsSetting();
+#ifdef NXDK
+    xbox_log("Context::Init (window/audio)...\n");
+#endif
     this->context->Init(archiveFiles, {}, 3, { 32000, 1024, 1680, audioChannelsSetting }, window, controlDeck);
+#ifdef NXDK
+    xbox_log("Context::Init done\n");
+#endif
 
 #if !defined(__SWITCH__) && !defined(NXDK)
     Ship::Context::GetInstance()->GetLogger()->set_level(
