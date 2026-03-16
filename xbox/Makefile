@@ -100,10 +100,11 @@ SRCS += $(wildcard $(LUS_ROOT)/src/resource/archive/*.cpp)
 SRCS += $(wildcard $(LUS_ROOT)/src/public/bridge/*.cpp)
 SRCS += $(wildcard $(LUS_ROOT)/src/public/libultra/*.cpp)
 
-# Audio (SDL audio player only, not WASAPI)
+# Audio
 SRCS += $(LUS_ROOT)/src/audio/Audio.cpp
 SRCS += $(LUS_ROOT)/src/audio/AudioPlayer.cpp
 SRCS += $(LUS_ROOT)/src/audio/SDLAudioPlayer.cpp
+SRCS += $(LUS_ROOT)/src/audio/XboxAudioPlayer.cpp
 
 # Binary tools (BinaryReader, MemoryStream, etc.)
 SRCS += $(wildcard $(LUS_ROOT)/src/utils/binarytools/*.cpp)
@@ -274,5 +275,30 @@ CXXFLAGS += -fexceptions
 
 # Default nxdk stack is 64KB - far too small for deep C++ call chains
 LDFLAGS += -stack:524288
+
+# ============================================================================
+# RXDK DirectSound audio (pre-compiled .obj files + dsound.lib)
+# ============================================================================
+XBOX_COMPAT_DIR = /c/Claude/starfox/xbox_compat
+
+# Include paths for RXDK DirectSound headers (xtl.h, dsound.h)
+# Applied globally since XboxAudioPlayer.cpp needs them
+CFLAGS += -I$(XBOX_COMPAT_DIR)
+CFLAGS += -I$(XBOX_COMPAT_DIR)/rxdk_include
+
+# Pre-compiled RXDK DirectSound object files
+DSOUND_OBJS = $(wildcard $(XBOX_COMPAT_DIR)/dsound_objs/*.obj)
+
+# Bridge and MSVC compat objects
+DSOUND_OBJS += $(XBOX_COMPAT_DIR)/dsound_bridge.obj
+DSOUND_OBJS += $(XBOX_COMPAT_DIR)/msvc_compat.obj
+
+# Note: msvcrt_objs (sehprolg, ftol2, pow, 87ctrigh) excluded:
+# - ftol2/pow/87ctrigh already in msvc_compat.obj or nxdk
+# - sehprolg incompatible with /safeseh; SEH handled by nxdk runtime
+
+# Link pre-compiled objects and dsound.lib
+LDFLAGS += $(DSOUND_OBJS)
+LDFLAGS += /c/Claude/starfox/dsound.lib
 
 include $(NXDK_DIR)/Makefile

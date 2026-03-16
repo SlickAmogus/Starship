@@ -1,0 +1,19 @@
+!!VP1.1
+# Passthrough vertex shader with texcoord support
+# v[0] = POSITION, v[3] = DIFFUSE color, v[8] = TEXCOORD0
+# c[0]-c[3] = viewport matrix (maps clip-space to screen)
+# Outputs: o[HPOS] = screen position, o[COL0] = diffuse, o[TEX0] = texcoord
+#
+# Position transform: pos = mul(position, viewport_matrix)
+# Then perspective divide: pos.xyz /= pos.w
+    MOV o[TEX0], v[8];
+    MOV o[COL0], v[3];
+    MUL R0, v[0].y, c[1];
+    MAD R0, v[0].x, c[0], R0;
+    MAD R0, v[0].z, c[2], R0;
+    MAD R0, v[0].w, c[3], R0;
+    RCP R1.x, R0.w;
+    MUL R0.xyz, R0.xyzx, R1.x;
+    MOV o[HPOS].xyz, R0;
+    MOV o[HPOS].w, R0.w;
+END

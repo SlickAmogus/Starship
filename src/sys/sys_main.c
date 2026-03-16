@@ -5,6 +5,7 @@
 
 #ifdef NXDK
 #include "xbox_debug.h"
+extern GameState gGameState;
 #endif
 
 s32 sGammaMode = 1;
@@ -244,6 +245,10 @@ void Graphics_ThreadEntry(void* arg0) {
 }
 
 void Graphics_ThreadUpdate() {
+#ifdef NXDK
+    static int gtuCount = 0;
+    gtuCount++;
+#endif
 
     if (GfxDebuggerIsDebugging()) {
         Graphics_PushFrame(gGfxPool->masterDL);
@@ -252,6 +257,16 @@ void Graphics_ThreadUpdate() {
 
     gSysFrameCount++;
     Graphics_InitializeTask(gSysFrameCount);
+
+#ifdef NXDK
+    /* Save DL start pointers for overflow detection after Game_Update */
+    Gfx* dlMasterStart = gMasterDisp;
+    Gfx* dlUnk1Start = gUnkDisp1;
+    Gfx* dlUnk2Start = gUnkDisp2;
+    Mtx* mtxStart = gGfxMtx;
+    Lightsn* lightStart = gLight;
+#endif
+
     Controller_UpdateInput();
     Controller_ReadData();
     Controller_Rumble();
@@ -269,6 +284,49 @@ void Graphics_ThreadUpdate() {
         gDPFullSync(gMasterDisp++);
         gSPEndDisplayList(gMasterDisp++);
     }
+
+#ifdef NXDK
+    /* Check display list / matrix / light buffer usage and detect overflow */
+    {
+        int dlMasterUsed = (int)(gMasterDisp - gGfxPool->masterDL);
+        int dlUnk1Used = (int)(gUnkDisp1 - gGfxPool->unkDL1);
+        int dlUnk2Used = (int)(gUnkDisp2 - gGfxPool->unkDL2);
+        int mtxUsed = (int)(gGfxMtx - gGfxPool->mtx);
+        int lightUsed = (int)(gLight - gGfxPool->lights);
+
+        int dlMasterMax = 0x1380 * 4;  /* 19968 */
+        int dlUnk1Max = 0x180 * 4;     /* 1536 */
+        int dlUnk2Max = 0xD80 * 4;     /* 13824 */
+        int mtxMax = 0x480 * 4;        /* 4608 */
+        int lightMax = 0x100 * 4;      /* 1024 */
+
+        int overflow = 0;
+        if (dlMasterUsed > dlMasterMax) overflow |= 1;
+        if (dlUnk1Used > dlUnk1Max) overflow |= 2;
+        if (dlUnk2Used > dlUnk2Max) overflow |= 4;
+        if (mtxUsed > mtxMax) overflow |= 8;
+        if (lightUsed > lightMax) overflow |= 16;
+
+        /* Log every 200 frames OR if close to overflow (>80% usage) OR if overflow detected */
+        int nearFull = (dlMasterUsed > dlMasterMax * 80 / 100) ||
+                       (dlUnk1Used > dlUnk1Max * 80 / 100) ||
+                       (dlUnk2Used > dlUnk2Max * 80 / 100) ||
+                       (mtxUsed > mtxMax * 80 / 100) ||
+                       (lightUsed > lightMax * 80 / 100);
+
+        if (overflow || nearFull || gtuCount <= 10 || (gtuCount % 200) == 0) {
+            xbox_log("DL[%d] gs=%d master=%d/%d dl1=%d/%d dl2=%d/%d mtx=%d/%d lt=%d/%d%s\n",
+                     gtuCount, (int)gGameState,
+                     dlMasterUsed, dlMasterMax,
+                     dlUnk1Used, dlUnk1Max,
+                     dlUnk2Used, dlUnk2Max,
+                     mtxUsed, mtxMax,
+                     lightUsed, lightMax,
+                     overflow ? " OVERFLOW!" : (nearFull ? " WARN!" : ""));
+        }
+    }
+#endif
+
     Graphics_SetTask();
 
     if (GfxDebuggerIsDebuggingRequested()) {
@@ -280,16 +338,6 @@ void Graphics_ThreadUpdate() {
     if (gFillScreen == 0) {
         osViSwapBuffer(&gFrameBuffers[(gSysFrameCount - 1) % 3]);
     }
-
-    // LTODO: FAULT_CRASH
-    // func_80007FE4(&gFrameBuffers[(gSysFrameCount - 1) % 3], SCREEN_WIDTH, 16);
-
-    // LTODO: Figure out what this is
-    // var_v1 = MIN(D_80137E78, 4);
-    // var_v2 = MAX(var_v1, gGfxVImsgQueue.validCount + 1);
-    // for (i = 0; i < var_v2; i += 1) { // Can't be ++
-    //     osRecvMesg(&gGfxVImsgQueue, NULL, OS_MESG_BLOCK);
-    // }
 
     Audio_Update();
 }

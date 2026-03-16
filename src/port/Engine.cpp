@@ -436,6 +436,9 @@ void GameEngine::HandleAudioThread() {
 #ifdef PIPE_DEBUG
     std::ofstream outfile("audio.bin", std::ios::binary | std::ios::app);
 #endif
+#ifdef NXDK
+    int audioFrameCount = 0;
+#endif
     while (audio.running) {
         {
             std::unique_lock<std::mutex> Lock(audio.mutex);
@@ -450,7 +453,11 @@ void GameEngine::HandleAudioThread() {
         // gVIsPerFrame = 2;
 
 #define AUDIO_FRAMES_PER_UPDATE (gVIsPerFrame > 0 ? gVIsPerFrame : 1)
-#define MAX_AUDIO_FRAMES_PER_UPDATE 5 // Compile-time constant with max value of gVIsPerFrame
+#ifdef NXDK
+#define MAX_AUDIO_FRAMES_PER_UPDATE 4 // Xbox: cap at 4 to prevent audio death spiral (was 8)
+#else
+#define MAX_AUDIO_FRAMES_PER_UPDATE 8
+#endif
 
         std::unique_lock<std::mutex> Lock(audio.mutex);
         int samples_left = AudioPlayerBuffered();
@@ -464,11 +471,36 @@ void GameEngine::HandleAudioThread() {
 
         const int32_t num_audio_channels = GetNumAudioChannels();
 
+#ifdef NXDK
+        audioFrameCount++;
+        if (audioFrameCount <= 5 || (audioFrameCount % 300) == 0) {
+            xbox_log("AudioThread[%d]: samples_left=%d desired=%d num_samples=%u ch=%d framesPerUpd=%d\n",
+                     audioFrameCount, samples_left, AudioPlayerGetDesiredBuffered(),
+                     num_audio_samples, num_audio_channels, AUDIO_FRAMES_PER_UPDATE);
+        }
+#endif
+
         s16 audio_buffer[SAMPLES_HIGH * MAX_NUM_AUDIO_CHANNELS * MAX_AUDIO_FRAMES_PER_UPDATE] = { 0 };
         for (int i = 0; i < AUDIO_FRAMES_PER_UPDATE; i++) {
             AudioThread_CreateNextAudioBuffer(audio_buffer + i * (num_audio_samples * num_audio_channels),
                                               num_audio_samples);
         }
+
+#ifdef NXDK
+        {
+            size_t totalBytes = num_audio_samples * (sizeof(int16_t) * num_audio_channels * AUDIO_FRAMES_PER_UPDATE);
+            if (audioFrameCount <= 5) {
+                // Check if audio buffer has any non-zero samples
+                bool hasData = false;
+                for (size_t i = 0; i < totalBytes / 2 && !hasData; i++) {
+                    if (audio_buffer[i] != 0) hasData = true;
+                }
+                xbox_log("AudioThread[%d]: PlayFrame %u bytes, hasData=%d\n",
+                         audioFrameCount, (unsigned)totalBytes, hasData);
+            }
+        }
+#endif
+
 #ifdef PIPE_DEBUG
         if (outfile.is_open()) {
             outfile.write(reinterpret_cast<char*>(audio_buffer),
@@ -477,7 +509,7 @@ void GameEngine::HandleAudioThread() {
 #endif
         AudioPlayerPlayFrame((u8*) audio_buffer,
                              num_audio_samples * (sizeof(int16_t) * num_audio_channels * AUDIO_FRAMES_PER_UPDATE));
-        
+
         audio.processing = false;
         audio.cv_from_thread.notify_one();
     }
@@ -487,30 +519,48 @@ void GameEngine::HandleAudioThread() {
 }
 
 void GameEngine::StartAudioFrame() {
+#ifdef NXDK
+    // Xbox: no-op, audio processed synchronously via ProcessAudioFrameSync()
+#else
     {
         std::unique_lock<std::mutex> Lock(audio.mutex);
         audio.processing = true;
     }
     audio.cv_to_thread.notify_one();
+#endif
 }
 
 void GameEngine::EndAudioFrame() {
+#ifdef NXDK
+    // Xbox: no-op, audio processed synchronously via ProcessAudioFrameSync()
+#else
     {
         std::unique_lock<std::mutex> Lock(audio.mutex);
         while (audio.processing) {
             audio.cv_from_thread.wait(Lock);
         }
     }
+#endif
 }
 
 void GameEngine::AudioInit() {
+#ifdef NXDK
+    // Xbox: no audio thread. Single-core CPU means threading adds overhead
+    // and race conditions (resource manager is not thread-safe) without any
+    // benefit. Audio is processed synchronously in push_frame() instead.
+    audio.running = false;
+#else
     if (!audio.running) {
         audio.running = true;
         audio.thread = std::thread(HandleAudioThread);
     }
+#endif
 }
 
 void GameEngine::AudioExit() {
+#ifdef NXDK
+    // No audio thread on Xbox — nothing to join
+#else
     {
         std::unique_lock lock(audio.mutex);
         audio.running = false;
@@ -518,7 +568,71 @@ void GameEngine::AudioExit() {
     audio.cv_to_thread.notify_all();
     // Wait until the audio thread quit
     audio.thread.join();
+#endif
 }
+
+#ifdef NXDK
+void GameEngine::ProcessAudioFrameSync() {
+    static int audioFrameCount = 0;
+    static uint32_t lastAudioTime = 0;
+    /* Static buffer avoids 26KB+ stack allocation every frame.
+     * Max size: 560 samples * 2 channels * 4 frames * 2 bytes = 8,960 bytes */
+    static s16 audio_buffer[SAMPLES_HIGH * 2 * MAX_AUDIO_FRAMES_PER_UPDATE];
+
+    int samples_left = AudioPlayerBuffered();
+
+    /* Use a lower desired threshold on Xbox to reduce catch-up pressure.
+     * Default is 2480 — we target 1120 (2 synthesis calls worth at 560 samples). */
+    int desired = 1120;
+
+    u32 num_audio_samples = samples_left < desired ? (((samples_high))) : (((samples_low)));
+
+    frames++;
+    if (frames > 60) {
+        countermin++;
+    }
+
+    /* Force stereo synthesis on Xbox — 3x less mixing work in the envelope mixer.
+     * The APU handles surround output from the front channel DirectSound buffer. */
+    const int32_t num_audio_channels = 2;
+
+    uint32_t now = SDL_GetTicks();
+    uint32_t elapsed = (lastAudioTime > 0) ? (now - lastAudioTime) : 33;
+    lastAudioTime = now;
+
+    int neededFrames;
+
+    if (samples_left > desired * 3) {
+        /* Buffer is overfull — generate minimum to keep game audio state advancing */
+        neededFrames = 1;
+    } else {
+        /* Fixed synthesis rate: always match the game update rate (gVIsPerFrame=2).
+         * No catch-up: trying to generate 3-4 subframes when behind creates a death
+         * spiral where audio takes 30-50ms, making the next frame even slower.
+         * The buffer may thin during heavy scenes but refills when load decreases. */
+        neededFrames = AUDIO_FRAMES_PER_UPDATE;
+    }
+
+    audioFrameCount++;
+
+    uint32_t synthStart = SDL_GetTicks();
+    memset(audio_buffer, 0, sizeof(s16) * num_audio_samples * num_audio_channels * neededFrames);
+    for (int i = 0; i < neededFrames; i++) {
+        AudioThread_CreateNextAudioBuffer(audio_buffer + i * (num_audio_samples * num_audio_channels),
+                                          num_audio_samples);
+    }
+    uint32_t synthEnd = SDL_GetTicks();
+
+    size_t totalBytes = num_audio_samples * (sizeof(int16_t) * num_audio_channels * neededFrames);
+    AudioPlayerPlayFrame((u8*) audio_buffer, totalBytes);
+
+    if (audioFrameCount <= 10 || (audioFrameCount % 200) == 0) {
+        xbox_log("ASync[%d]: sl=%d ns=%u sf=%d el=%u synth=%ums\n",
+                 audioFrameCount, samples_left,
+                 num_audio_samples, neededFrames, elapsed, synthEnd - synthStart);
+    }
+}
+#endif
 
 void GameEngine::RunCommands(Gfx* Commands, const std::vector<std::unordered_map<Mtx*, MtxF>>& mtx_replacements) {
     auto wnd = std::dynamic_pointer_cast<Fast::Fast3dWindow>(Ship::Context::GetInstance()->GetWindow());
@@ -567,9 +681,15 @@ void GameEngine::ProcessGfxCommands(Gfx* commands) {
     int fps = target_fps;
     int original_fps = 60 / gVIsPerFrame;
 
+#ifdef PLATFORM_XBOX
+    // Xbox: no frame interpolation — render at game logic rate only.
+    // The PC port defaults to 60fps interpolation which doubles GPU work.
+    fps = original_fps;
+#else
     if (target_fps == 20 || original_fps > target_fps) {
         fps = original_fps;
     }
+#endif
 
     if (last_fps != fps || last_update_rate != gVIsPerFrame) {
         time = 0;

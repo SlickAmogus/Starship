@@ -7,6 +7,10 @@
 #include "port/hooks/list/EngineEvent.h"
 #include "port/mods/PortEnhancements.h"
 
+#ifdef NXDK
+#include "xbox_debug.h"
+#endif
+
 f32 gNextVsViewScale;
 f32 gVsViewScale;
 s32 gPlayerInactive[4];

@@ -3,16 +3,31 @@
 #include "Engine.h"
 #include "DisplayList.h"
 
+#ifdef NXDK
+#include "xbox_debug.h"
+#endif
+
 extern "C" void gSPDisplayList(Gfx* pkt, Gfx* dl) {
     char* imgData = (char*)dl;
 
     if (GameEngine_OTRSigCheck(imgData) == 1) {
         auto resource = Ship::Context::GetInstance()->GetResourceManager()->LoadResource(imgData);
+#ifdef NXDK
+        {
+            static int dlLoadCount = 0;
+            dlLoadCount++;
+            if (dlLoadCount <= 100 || (dlLoadCount % 2000) == 0) {
+                bool ok = (resource != nullptr);
+                xbox_log("DLL[%d]: %s -> %s\n", dlLoadCount, imgData, ok ? "OK" : "FAIL");
+            }
+            if (!resource) {
+                xbox_log("DLL FAIL: %s\n", imgData);
+                return;
+            }
+        }
+#endif
         auto res = std::static_pointer_cast<Fast::DisplayList>(resource);
         dl = &res->Instructions[0];
-        // dl->words.trace.file = imgData;
-        // dl->words.trace.idx = 0;
-        // dl->words.trace.valid = true;
     }
 
     __gSPDisplayList(pkt, dl);

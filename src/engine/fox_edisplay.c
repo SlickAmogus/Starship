@@ -28,6 +28,9 @@
 #include "assets/ast_ve1_boss.h"
 #include "assets/ast_zoness.h"
 #include "port/interpolation/FrameInterpolation.h"
+#ifdef NXDK
+#include "xbox_debug.h"
+#endif
 #include "port/hooks/Events.h"
 
 Vec3f D_edisplay_801615D0;
@@ -1814,8 +1817,45 @@ void Object_DrawAll(s32 cullDirection) {
         }
     } else {
         RCP_SetupDL_29(gFogRed, gFogGreen, gFogBlue, gFogAlpha, gFogNear, gFogFar);
+#ifdef NXDK
+        {
+            static int odaCount = 0;
+            int activeCount = 0;
+            int bumpCount = 0, buildCount = 0, archCount = 0, otherScenery = 0;
+            int initCount = 0;
+            for (int j = 0; j < ARRAY_COUNT(gScenery); j++) {
+                if (gScenery[j].obj.status == OBJ_INIT) initCount++;
+                if (gScenery[j].obj.status >= OBJ_ACTIVE) {
+                    activeCount++;
+                    int sid = gScenery[j].obj.id;
+                    if (sid >= 1 && sid <= 5) bumpCount++;
+                    else if (sid >= 10 && sid <= 18) buildCount++;
+                    else if (sid >= 20 && sid <= 22) archCount++;
+                    else otherScenery++;
+                }
+            }
+            odaCount++;
+            if (odaCount <= 20 || (odaCount % 500) == 0) {
+                xbox_log("ODA[%d]: act=%d init=%d cull=%d bump=%d bld=%d arch=%d oth=%d\n",
+                         odaCount, activeCount, initCount, cullDirection,
+                         bumpCount, buildCount, archCount, otherScenery);
+            }
+        }
+#endif
         for (i = 0, scenery = gScenery; i < ARRAY_COUNT(gScenery); i++, scenery++) {
             if (scenery->obj.status >= OBJ_ACTIVE) {
+#ifdef NXDK
+                {
+                    static int sdCount = 0;
+                    sdCount++;
+                    if (sdCount <= 100 || (sdCount % 1000) == 0) {
+                        xbox_log("SD[%d]: i=%d id=%d dt=%d dl=%p px=%d py=%d pz=%d\n",
+                                 sdCount, i, scenery->obj.id, scenery->info.drawType,
+                                 scenery->info.dList,
+                                 (int)scenery->obj.pos.x, (int)scenery->obj.pos.y, (int)scenery->obj.pos.z);
+                    }
+                }
+#endif
                 FrameInterpolation_RecordOpenChild(scenery, i);
                 FrameInterpolation_RecordMarker(__FILE__, __LINE__);
                 if (cullDirection > 0) {

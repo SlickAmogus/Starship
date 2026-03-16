@@ -19,6 +19,9 @@
 #include "assets/ast_versus.h"
 #include "assets/ast_zoness.h"
 #include "port/hooks/Events.h"
+#ifdef NXDK
+#include "xbox_debug.h"
+#endif
 
 s32 D_enmy_Timer_80161670[4];
 s32 gLastPathChange;
@@ -222,6 +225,18 @@ void Scenery_Load(Scenery* this, ObjectInit* objInit) {
     this->obj.rot.z = objInit->rot.z;
     this->obj.id = objInit->id;
     Object_SetInfo(&this->info, this->obj.id);
+#ifdef NXDK
+    {
+        static int slCount = 0;
+        slCount++;
+        if (slCount <= 80 || (slCount % 500) == 0) {
+            xbox_log("SL[%d]: id=%d dt=%d dl=%p pos=(%d,%d,%d)\n",
+                     slCount, (int)this->obj.id, (int)this->info.drawType,
+                     this->info.dList,
+                     (int)this->obj.pos.x, (int)this->obj.pos.y, (int)this->obj.pos.z);
+        }
+    }
+#endif
 }
 
 void Sprite_Load(Sprite* this, ObjectInit* objInit) {
@@ -623,8 +638,31 @@ void Object_LoadLevelObjects(void) {
     }
 #endif
 
+#ifdef NXDK
+    {
+        static int olloCount = 0;
+        olloCount++;
+        if (olloCount <= 30 || (olloCount % 500) == 0) {
+            ObjectInit* first = &gLevelObjects[gObjectLoadIndex];
+            xbox_log("OLLO[%d]: gLO=%p idx=%d pp=%d first.z1=%d first.id=%d\n",
+                     olloCount, (void*)gLevelObjects, (int)gObjectLoadIndex,
+                     (int)gPathProgress,
+                     gLevelObjects ? (int)first->zPos1 : -1,
+                     gLevelObjects ? (int)first->id : -1);
+        }
+    }
+#endif
     for (i = 0, objInit = &gLevelObjects[gObjectLoadIndex]; i < 10000; i++, gObjectLoadIndex++, objInit++) {
         if (objInit->id <= OBJ_INVALID) {
+#ifdef NXDK
+            {
+                static int breakCount = 0;
+                breakCount++;
+                if (breakCount <= 10) {
+                    xbox_log("OLLO_BRK_ID[%d]: idx=%d id=%d\n", breakCount, (int)gObjectLoadIndex, (int)objInit->id);
+                }
+            }
+#endif
             break;
         }
         if ((gPathProgress <= objInit->zPos1) && (objInit->zPos1 <= gPathProgress + 200.0f)) {
@@ -637,6 +675,17 @@ void Object_LoadLevelObjects(void) {
                 Object_Load(objInit, xMax, xMin, yMax, yMin);
             }
         } else {
+#ifdef NXDK
+            {
+                static int breakZ = 0;
+                breakZ++;
+                if (breakZ <= 10) {
+                    xbox_log("OLLO_BRK_Z[%d]: idx=%d pp=%d z1=%d id=%d\n",
+                             breakZ, (int)gObjectLoadIndex, (int)gPathProgress,
+                             (int)objInit->zPos1, (int)objInit->id);
+                }
+            }
+#endif
             break;
         }
     }
@@ -3144,6 +3193,16 @@ void Object_Update(void) {
         gCullObjects = true;
     }
     if (gLevelMode != LEVELMODE_ALL_RANGE) {
+#ifdef NXDK
+        {
+            static int ollCheck = 0;
+            ollCheck++;
+            if (ollCheck <= 30 || (ollCheck % 500) == 0) {
+                xbox_log("OLL[%d]: loadObj=%d pstate=%d lmode=%d\n",
+                         ollCheck, (int)gLoadLevelObjects, (int)gPlayer[0].state, (int)gLevelMode);
+            }
+        }
+#endif
         if ((gLoadLevelObjects != 0) && (gPlayer[0].state != PLAYERSTATE_LEVEL_INTRO)) {
             Object_LoadLevelObjects();
         }

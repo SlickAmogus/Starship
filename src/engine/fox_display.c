@@ -1,4 +1,8 @@
 #include "global.h"
+#ifdef NXDK
+#include "xbox_debug.h"
+static int sDU_count = 0;
+#endif
 #include "mods/hit64.c"
 #include "assets/ast_arwing.h"
 #include "assets/ast_allies.h"
@@ -1808,6 +1812,10 @@ void Display_Update(void) {
     s32 pad;
     Player* player;
     Player* camPlayer = &gPlayer[gPlayerNum];
+#ifdef NXDK
+    sDU_count++;
+    int duLog = ((sDU_count % 500) == 0);
+#endif
 
     sDrawCockpit = false;
 
@@ -1917,6 +1925,9 @@ void Display_Update(void) {
         Camera_SetStarfieldPos(gPlayCamEye.x, gPlayCamEye.y, gPlayCamEye.z, gPlayCamAt.x, gPlayCamAt.y, gPlayCamAt.z);
         Background_DrawStarfield();
     }
+#ifdef NXDK
+    if (duLog) xbox_log("DU%d:1cam\n", sDU_count);
+#endif
 
     Background_DrawBackdrop();
     FrameInterpolation_RecordOpenChild("Sun", 0);
@@ -1945,6 +1956,9 @@ void Display_Update(void) {
         }
     }
 
+#ifdef NXDK
+    if (duLog) xbox_log("DU%d:2bg\n", sDU_count);
+#endif
     Lights_SetOneLight(&gMasterDisp, gLight2x, gLight2y, gLight2z, gLight2R, gLight2G, gLight2B, gAmbientR, gAmbientG,
                        gAmbientB);
 
@@ -1977,6 +1991,9 @@ void Display_Update(void) {
 
     Lights_SetOneLight(&gMasterDisp, gLight1x, gLight1y, gLight1z, gLight1R, gLight1G, gLight1B, gAmbientR, gAmbientG,
                        gAmbientB);
+#ifdef NXDK
+    if (duLog) xbox_log("DU%d:3plyr\n", sDU_count);
+#endif
     Object_Draw(1);
     TexturedLine_Draw();
     gReflectY = 1;
@@ -2016,11 +2033,17 @@ void Display_Update(void) {
         FrameInterpolation_RecordCloseChild();
     }
 
+#ifdef NXDK
+    if (duLog) xbox_log("DU%d:4obj\n", sDU_count);
+#endif
     if ((gCurrentLevel != LEVEL_AQUAS) &&
         (((gCurrentLevel != LEVEL_CORNERIA) && (gCurrentLevel != LEVEL_VENOM_ANDROSS)) ||
          ((gPlayer[0].state != PLAYERSTATE_LEVEL_COMPLETE) && (gPlayer[0].state != PLAYERSTATE_LEVEL_INTRO)))) {
         Effect_Draw(0);
     }
+#ifdef NXDK
+    if (duLog) xbox_log("DU%d:5fx\n", sDU_count);
+#endif
 
     gReflectY = 1;
 
@@ -2044,6 +2067,9 @@ void Display_Update(void) {
         Effect_Draw(0);
     }
 
+#ifdef NXDK
+    if (duLog) xbox_log("DU%d:6shad\n", sDU_count);
+#endif
     BonusText_DrawAll();
     Matrix_Pop(&gGfxMatrix);
     Display_ActorMarks();
@@ -2070,12 +2096,21 @@ void Display_Update(void) {
         Turret_Draw(gPlayer);
     }
 
+#ifdef NXDK
+    if (duLog) xbox_log("DU%d:7a\n", sDU_count);
+#endif
     Background_DrawLensFlare();
+#ifdef NXDK
+    if (duLog) xbox_log("DU%d:7b\n", sDU_count);
+#endif
 
     if ((gCamCount != 1) && ((camPlayer->state == PLAYERSTATE_ACTIVE) || (camPlayer->state == PLAYERSTATE_U_TURN))) {
         HUD_Draw();
         HUD_EdgeArrows_Update();
     }
+#ifdef NXDK
+    if (duLog) xbox_log("DU%d:7c\n", sDU_count);
+#endif
 
     if (bigJump) {
         // @port Re-enable Interpolation if it was skipped
@@ -2083,9 +2118,18 @@ void Display_Update(void) {
     } else {
         FrameInterpolation_RecordCloseChild();
     }
+#ifdef NXDK
+    if (duLog) xbox_log("DU%d:7d\n", sDU_count);
+#endif
 
     Matrix_Pop(&gGfxMatrix);
+#ifdef NXDK
+    if (duLog) xbox_log("DU%d:7e\n", sDU_count);
+#endif
     Display_DrawHelpAlert();
+#ifdef NXDK
+    if (duLog) xbox_log("DU%d:7f\n", sDU_count);
+#endif
     sPlayersVisible[gPlayerNum] = false;
     Matrix_Pop(&gGfxMatrix);
 

@@ -415,6 +415,13 @@ unordered_map<Mtx*, MtxF> FrameInterpolation_Interpolate(float step) {
 bool camera_interpolation = true;
 
 void FrameInterpolation_ShouldInterpolateFrame(bool shouldInterpolate) {
+#ifdef NXDK
+    // Xbox: never enable recording. StartRecord() disables it and returns early
+    // because the append() tree (std::map/vector per frame) is too expensive.
+    // If bigJump re-enables is_recording here, subsequent Matrix_Pop calls will
+    // call append() on an empty current_path → crash via .back() on empty vector.
+    return;
+#endif
     // camera_interpolation = shouldInterpolate;
     is_recording = shouldInterpolate;
 }
@@ -424,6 +431,13 @@ void FrameInterpolation_StartRecord(void) {
     current_recording = {};
     current_path.clear();
     current_path.push_back(&current_recording.root_path);
+#ifdef NXDK
+    // Xbox: no frame interpolation recording. The append() calls build a tree
+    // of std::map/vector per frame — far too expensive for 733MHz CPU.
+    // Init above is kept (cheap for empty structures) but recording is disabled.
+    is_recording = false;
+    return;
+#endif
     if (!camera_interpolation) {
         // default to interpolating
         camera_interpolation = true;

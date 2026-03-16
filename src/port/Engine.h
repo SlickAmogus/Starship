@@ -37,6 +37,9 @@ class GameEngine {
     static void EndAudioFrame();
     static void AudioInit();
     static void AudioExit();
+#ifdef NXDK
+    static void ProcessAudioFrameSync();
+#endif
     static void RunCommands(Gfx* Commands, const std::vector<std::unordered_map<Mtx*, MtxF>>& mtx_replacements);
     static void Destroy();
 	static uint32_t GetInterpolationFPS();
